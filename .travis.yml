@@ -1,0 +1,37 @@
+dist: xenial
+language: python
+python:
+  - "3.6"
+  - "3.7"
+  - "3.8-dev"
+
+matrix:
+  allow_failures:
+    - python: "3.8-dev"
+
+before_install:
+- pip install poetry
+- pip install codecov
+
+install:
+- poetry install
+
+script:
+  - "poetry run pytest --cov=asgi_testclient --mypy"
+
+after_script:
+    - codecov
+
+before_deploy:
+  - poetry config http-basic.pypi $PYPI_USER $PYPI_PASSWORD
+  - poetry build
+
+deploy:
+  provider: script
+  script: poetry publish
+  skip_cleanup: true
+  on:
+    tags: true
+    branch: master
+    repo: oldani/asgi-testClient
+    python: "3.7"
