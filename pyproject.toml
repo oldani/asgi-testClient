@@ -3,7 +3,16 @@ name = "asgi-testclient"
 version = "0.1.0"
 description = "Test Clietn for ASGI web applications"
 authors = ["Ordanis Sanchez <ordanisanchez@gmail.com>"]
+homepage = "https://github.com/oldani/asgi-testClient"
+repository = "https://github.com/oldani/asgi-testClient"
 license = "MIT"
+readme = "README.md"
+classifiers = [
+    "Framework :: AsyncIO",
+    "Topic :: Software Development :: Testing",
+    "Programming Language :: Python :: 3.6",
+    "Development Status :: 3 - Alpha"
+]
 
 [tool.poetry.dependencies]
 python = "^3.6"
