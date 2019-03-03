@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "asgi-testclient"
-version = "0.1.0"
+version = "0.2.0"
 description = "Test Clietn for ASGI web applications"
 authors = ["Ordanis Sanchez <ordanisanchez@gmail.com>"]
 homepage = "https://github.com/oldani/asgi-testClient"
