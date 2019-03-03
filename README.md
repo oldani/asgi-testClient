@@ -26,7 +26,7 @@ It should run on Python 3.5 but I haven' tested it.
 
 ## Usage
 
-The client replicates the requests API, so if you have used request you should feel comfortable.
+The client replicates the requests API, so if you have used request you should feel comfortable. **Note:** the client method are coroutines `get, post, delete, put, patch, etc..`.
 
 ```python
 import pytest
@@ -38,7 +38,6 @@ from myapp import API
 def client():
     return TestClient(API)
 
-
 @pytest.mark.asyncio
 async def test_get(client):
     response = await client.get("/")
@@ -46,7 +45,25 @@ async def test_get(client):
     assert response.status_code == 200
 ```
 
-I have used `pytest` in this example but you can use whichever runner you prefer. *Note:* the client method are coroutines `get, post, delete, put, patch, etc..`.
+I have used `pytest` in this example but you can use whichever runner you prefer.
+
+If you still prefer simple functions to coroutines, you can use the sync interface:
+
+```python
+import pytest
+from asgi_testclient.sync import TestClient
+
+@pytest.fixture
+def client():
+    return TestClient(API)
+
+def test_get(client):
+    response = client.get("/")
+    assert response.json() == {"hello": "world"}
+    assert response.status_code == 200
+```
+
+**Take in account that if you're running inside an async app you should use the async client, yet you can run the sync one inside threads is still desired.**
 
 ## TODO:
 - [ ] Support Websockets client.
