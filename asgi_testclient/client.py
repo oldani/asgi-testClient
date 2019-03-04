@@ -167,6 +167,18 @@ class WsSession:
             await sleep(0.1)
 
 
+class WsContextManager:
+    def __init__(self, ws_session):
+        self.ws_session = ws_session
+
+    async def __aenter__(self):
+        self.ws_session = await self.ws_session
+        return self.ws_session
+
+    async def __aexit__(self, *args):
+        await self.ws_session.close()
+
+
 class TestClient:
     """
         Client for testing ASGI applications.
@@ -366,3 +378,8 @@ class TestClient:
 
     async def ws_connect(self, url, subprotocols=None, **kwargs):
         return await self.send("GET", url, subprotocols=subprotocols, ws=True, **kwargs)
+
+    def ws_session(self, url, subprotocols=None, **kwargs):
+        return WsContextManager(
+            self.send("GET", url, subprotocols=subprotocols, ws=True, **kwargs)
+        )

@@ -99,3 +99,10 @@ async def test_send_receive_json(client):
 
     assert response == json_msg
     await websocket.close()
+
+
+@pytest.mark.asyncio
+async def test_ws_context(client):
+    async with client.ws_session("/") as websocket:
+        data = await websocket.receive_text()
+        assert data == "Hello, world!"
