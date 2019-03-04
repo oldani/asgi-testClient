@@ -1,8 +1,49 @@
 import asyncio
-from asgi_testclient.client import TestClient as _TestClient
+import json
+from asgi_testclient import client
+from asgi_testclient.types import Optional
 
 
-class TestClient(_TestClient):
+class WsSession(client.WsSession):
+    def __init__(self, *args):
+        self._loop = asyncio.get_event_loop()
+        super().__init__(*args)
+
+    def send_text(self, message: str) -> None:  # type: ignore
+        self._loop.run_until_complete(super().send_text(message))
+
+    def receive_text(self) -> Optional[str]:  # type: ignore
+        return self._loop.run_until_complete(super().receive_text())
+
+    def send_bytes(self, message: bytes) -> None:  # type: ignore
+        self._loop.run_until_complete(super().send_bytes(message))
+
+    def receive_bytes(self) -> Optional[bytes]:  # type: ignore
+        return self._loop.run_until_complete(super().receive_bytes())
+
+    def send_json(self, message: str) -> None:  # type: ignore
+        _message = {"type": "websocket.receive", "text": json.dumps(message)}
+        self._loop.run_until_complete(super().send(_message))
+
+    def receive_json(self):
+        return self._loop.run_until_complete(super().receive_json())
+
+    def close(self):
+        return self._loop.run_until_complete(super().close())
+
+
+client.WsSession = WsSession  # type: ignore
+
+
+class WsContextManager(client.WsContextManager):
+    def __enter__(self):
+        return self.ws_session
+
+    def __exit__(self, *args):
+        return self.ws_session.close()
+
+
+class TestClient(client.TestClient):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         try:
@@ -45,3 +86,15 @@ class TestClient(_TestClient):
     def patch(self, url, **kwargs):
         response = self.loop.run_until_complete(self.send("PATCH", url, **kwargs))
         return response
+
+    def ws_connect(self, url, subprotocols=None, **kwargs):
+        websocket = self.loop.run_until_complete(
+            self.send("GET", url, subprotocols=subprotocols, ws=True, **kwargs)
+        )
+        return websocket
+
+    def ws_session(self, url, subprotocols=None, **kwargs):
+        ws_session = self.loop.run_until_complete(
+            self.send("GET", url, subprotocols=subprotocols, ws=True, **kwargs)
+        )
+        return WsContextManager(ws_session)
