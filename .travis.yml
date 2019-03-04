@@ -17,7 +17,8 @@ install:
 - poetry install
 
 script:
-  - "poetry run pytest --cov=asgi_testclient --mypy"
+  - "pytest -m "not sync" --cov-config .coveragerc --cov=asgi_testclient --mypy"
+  - "poetry run pytest -m sync -v"
 
 after_script:
     - codecov
