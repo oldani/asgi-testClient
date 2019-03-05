@@ -65,8 +65,65 @@ def test_get(client):
 
 **Take in account that if you're running inside an async app you should use the async client, yet you can run the sync one inside threads is still desired.**
 
+
+## Websockets
+
+If you're using ASGI you may be doing some web-sockets stuff. We have added support for it also, so you can test it easy.
+
+```python
+from asgi_testclient import TestClient
+from myapp import API
+
+async def test_send():
+    echo_server = TestClient(API)
+    websocket = await echo_server.ws_connect("/")
+    for msg in ["Hey", "Echo", "Back"]:
+        await websocket.send_text(msg)
+        data = await websocket.receive_text()
+        assert data == msg
+    await websocket.close()
+
+async def test_ws_context():
+    client = TestClient(API)
+    async with client.ws_session("/") as websocket:
+        data = await websocket.receive_text()
+        assert data == "Hello, world!"
+```
+
+Few things to take in count here:
+1. When using `ws_connect` you must call `websocket.close()` to finish up your APP task.
+2. For using websockets in context manager you must use `ws_session` instead of `ws_connect`.
+3. When waiting on server response `websocker.receive_*` it may raise a `WsDisconnect`.
+
+And one more time for those who don't want to this async we got the sync version:p
+
+```python
+from asgi_testclient.sync import TestClient
+from myapp import API
+
+client = TestClient(API)
+
+def test_send_receive_json():
+    websocket = client.ws_connect("/json")
+
+    json_msg = {"hello": "test"}
+    websocket.send_json(json_msg)
+
+    assert websocket.receive_json() == json_msg
+    websocket.close()
+
+def test_ws_context():
+    with client.ws_session("/") as websocket:
+        data = websocket.receive_text()
+        assert data == "Hello, world!"
+```
+
+**Important:** In the sync version you cannot use `send` or `receive` since they're coroutines, instead use their children `send_*` or `receive_*` `text|bytes|json`.
+
+Also sync version is done throw `monkey patching` so you can't use both version `async & sync` at the same time.
+
 ## TODO:
-- [ ] Support Websockets client.
+- [x] Support Websockets client.
 - [ ] Cookies support.
 - [ ] Redirects.
 - [ ] Support files encoding

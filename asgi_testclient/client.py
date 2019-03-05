@@ -1,8 +1,10 @@
+from asyncio import Queue, ensure_future, sleep
 import json as _json
 from http import HTTPStatus
 from urllib.parse import urlsplit, urlencode
 from wsgiref.headers import Headers as _Headers
 from asgi_testclient.types import (
+    Scope,
     ASGIApp,
     Message,
     Headers,
@@ -10,12 +12,20 @@ from asgi_testclient.types import (
     Url,
     ReqHeaders,
     ResHeaders,
+    Optional,
+    List,
+    Any,
+    Union,
 )
 
 DEFAULT_PORTS = {"http": 80, "ws": 80, "https": 443, "wss": 443}
 
 
 class HTTPError(Exception):
+    pass
+
+
+class WsDisconnect(Exception):
     pass
 
 
@@ -93,6 +103,82 @@ class Response:
             )
 
 
+class WsSession:
+    def __init__(self, app: ASGIApp, scope: Scope) -> None:
+        self._handler = app(scope)
+        self._scope = scope
+        self._client: Queue = Queue()  # For ASGI app to send messages
+        self._server: Queue = Queue()  # For client session to send message to ASGI app
+
+        self._server_task = ensure_future(
+            self._handler(self._server_receive, self._server_send)
+        )
+
+    async def _start(self) -> None:
+        """ Start conmunication between client and ASGI app. """
+        await self.send({"type": "websocket.connect"})
+        await self.receive()
+
+    async def _server_send(self, message: Message) -> None:
+        """ Put a message in client queue where it can consume. """
+        await self._client.put(message)
+
+    async def _server_receive(self) -> Message:
+        """ Read message from client. """
+        return await self._server.get()
+
+    async def send(self, message: Message) -> None:
+        """ Put message on ASGI app queue where it can consume it. """
+        await self._server.put(message)
+
+    async def receive(self) -> Message:
+        """ Read message from ASGI app. """
+        message = await self._client.get()
+        if message["type"] == "websocket.close":
+            raise WsDisconnect
+        return message
+
+    async def send_text(self, message: str) -> None:
+        await self.send({"type": "websocket.receive", "text": message})
+
+    async def receive_text(self) -> Optional[str]:
+        message = await self.receive()
+        return message.get("text")
+
+    async def send_bytes(self, message: bytes) -> None:
+        await self.send({"type": "websocket.receive", "bytes": message})
+
+    async def receive_bytes(self) -> Optional[bytes]:
+        message = await self.receive()
+        return message.get("bytes")
+
+    async def send_json(self, message: str) -> None:
+        message = _json.dumps(message)
+        await self.send_text(message)
+
+    async def receive_json(self):
+        message = (await self.receive()).get("text")
+        return _json.loads(message)
+
+    async def close(self):
+        """ Finish session with server, wait until handler is done. """
+        await self.send({"type": "websocket.disconnect", "code": 1000})
+        while not self._server_task.done():
+            await sleep(0.1)
+
+
+class WsContextManager:
+    def __init__(self, ws_session):
+        self.ws_session = ws_session
+
+    async def __aenter__(self):
+        self.ws_session = await self.ws_session
+        return self.ws_session
+
+    async def __aexit__(self, *args):
+        await self.ws_session.close()
+
+
 class TestClient:
     """
         Client for testing ASGI applications.
@@ -128,16 +214,16 @@ class TestClient:
         data: dict = {},
         headers: Headers = {},
         json: dict = {},
-    ) -> Response:
+        subprotocols: Optional[List[str]] = None,
+        ws: bool = False,
+    ) -> Union[Response, WsSession]:
         """ Handle request/response cycle seting up request, creating scope dict,
             calling the app and awaiting in the handler to return the response. """
         self.url = url
         scheme, host, port, path, query = self.prepare_url(url, params=params)
         req_headers: ReqHeaders = self.prepare_headers(host, headers)
-        self.prepare_body(req_headers, data=data, json=json)
 
         scope = {
-            "type": "http",
             "http_version": "1.1",
             "method": method,
             "path": path,
@@ -149,6 +235,16 @@ class TestClient:
             "server": [host, port],
         }
 
+        if ws:
+            scope["type"] = "websocket"
+            scope["scheme"] = "ws"
+            scope["subprotocols"] = subprotocols or []
+            session = WsSession(self.app, scope)
+            await session._start()
+            return session
+
+        scope["type"] = "http"
+        self.prepare_body(req_headers, data=data, json=json)
         try:
             self.__response_started = False
             self.__response_complete = False
@@ -279,3 +375,11 @@ class TestClient:
 
     async def patch(self, url, **kwargs):
         return await self.send("PATCH", url, **kwargs)
+
+    async def ws_connect(self, url, subprotocols=None, **kwargs):
+        return await self.send("GET", url, subprotocols=subprotocols, ws=True, **kwargs)
+
+    def ws_session(self, url, subprotocols=None, **kwargs):
+        return WsContextManager(
+            self.send("GET", url, subprotocols=subprotocols, ws=True, **kwargs)
+        )
