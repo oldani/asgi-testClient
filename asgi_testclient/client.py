@@ -1,8 +1,10 @@
-from asyncio import Queue, ensure_future, sleep
+import inspect
 import json as _json
+from asyncio import Queue, ensure_future, sleep
 from http import HTTPStatus
 from urllib.parse import urlsplit, urlencode
 from wsgiref.headers import Headers as _Headers
+
 from asgi_testclient.types import (
     Scope,
     ASGIApp,
@@ -27,6 +29,16 @@ class HTTPError(Exception):
 
 class WsDisconnect(Exception):
     pass
+
+
+def is_asgi2(app):
+    if inspect.isclass(app):
+        return True
+
+    if hasattr(app, "__call__") and inspect.iscoroutinefunction(app.__call__):
+        return False
+
+    return not inspect.iscoroutinefunction(app)
 
 
 class Response:
@@ -248,8 +260,11 @@ class TestClient:
         try:
             self.__response_started = False
             self.__response_complete = False
-            handler = self.app(scope)
-            await handler(self._receive, self._send)
+            if is_asgi2(self.app):
+                handler = self.app(scope)
+                await handler(self._receive, self._send)
+            else:
+                await self.app(scope, self._receive, self._send)
         except Exception as ex:
             if self.raise_server_exceptions:
                 raise ex from None
@@ -304,7 +319,9 @@ class TestClient:
 
         if headers:
             if isinstance(headers, dict):
-                _headers += [(k.encode(), v.encode()) for k, v in headers.items()]
+                _headers += [
+                    (k.encode(), v.encode()) for k, v in headers.items()
+                ]
             elif isinstance(headers, list):
                 _headers += [(k.encode(), v.encode()) for k, v in headers]
             else:
@@ -323,7 +340,9 @@ class TestClient:
             self._body = _json.dumps(json).encode()
         elif data:
             self._body = urlencode(data, doseq=True).encode()
-            headers.append((b"content-type", b"application/x-www-form-urlencoded"))
+            headers.append(
+                (b"content-type", b"application/x-www-form-urlencoded")
+            )
         headers.append((b"content-length", str(len(self._body)).encode()))
 
     async def _send(self, message: Message) -> None:
@@ -335,7 +354,9 @@ class TestClient:
             self._response = Response(
                 self.url,
                 status_code=message["status"],
-                headers=[(k.decode(), v.decode()) for k, v in message["headers"]],
+                headers=[
+                    (k.decode(), v.decode()) for k, v in message["headers"]
+                ],
             )
             self.__response_started = True
         elif message["type"] == "http.response.body":
@@ -377,7 +398,9 @@ class TestClient:
         return await self.send("PATCH", url, **kwargs)
 
     async def ws_connect(self, url, subprotocols=None, **kwargs):
-        return await self.send("GET", url, subprotocols=subprotocols, ws=True, **kwargs)
+        return await self.send(
+            "GET", url, subprotocols=subprotocols, ws=True, **kwargs
+        )
 
     def ws_session(self, url, subprotocols=None, **kwargs):
         return WsContextManager(
