@@ -26,12 +26,9 @@ class App:
 
 
 class Echo:
-    def __init__(self, scope):
+    async def __call__(self, scope, receive, send):
         assert scope["type"] == "websocket"
-        self.scope = scope
-
-    async def __call__(self, receive, send):
-        websocket = WebSocket(self.scope, receive=receive, send=send)
+        websocket = WebSocket(scope, receive=receive, send=send)
         await websocket.accept()
         while True:
             try:
@@ -48,7 +45,7 @@ def client():
 
 @pytest.fixture
 def echo_server():
-    return TestClient(Echo)
+    return TestClient(Echo())
 
 
 @pytest.mark.asyncio
