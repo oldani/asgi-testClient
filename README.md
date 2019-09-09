@@ -1,5 +1,5 @@
 # asgi-testClient
-![Travis (.org)](https://img.shields.io/travis/oldani/asgi-testClient.svg)
+[![Build Status](https://travis-ci.org/oldani/asgi-testClient.svg?branch=master)](https://travis-ci.org/oldani/asgi-testClient)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/asgi-testClient.svg)
 ![PyPI](https://img.shields.io/pypi/v/asgi-testClient.svg)
 [![codecov](https://codecov.io/gh/oldani/asgi-testClient/branch/master/graph/badge.svg)](https://codecov.io/gh/oldani/asgi-testClient)
