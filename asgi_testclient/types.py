@@ -8,7 +8,8 @@ Send = Callable[[Dict[str, Any]], Awaitable[None]]
 
 
 ASGIInstance = Callable[[Receive, Send], Awaitable[None]]
-ASGIApp = Callable[[Scope], ASGIInstance]
+ASGI2App = Callable[[Scope], ASGIInstance]
+ASGI3App = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 Headers = Union[Dict[str, str], List[Tuple[str, str]]]
 ReqHeaders = List[Tuple[bytes, bytes]]
