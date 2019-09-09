@@ -7,7 +7,10 @@ from wsgiref.headers import Headers as _Headers
 
 from asgi_testclient.types import (
     Scope,
-    ASGIApp,
+    Receive,
+    Send,
+    ASGI2App,
+    ASGI3App,
     Message,
     Headers,
     Params,
@@ -16,8 +19,8 @@ from asgi_testclient.types import (
     ResHeaders,
     Optional,
     List,
-    Any,
     Union,
+    cast
 )
 
 DEFAULT_PORTS = {"http": 80, "ws": 80, "https": 443, "wss": 443}
@@ -31,14 +34,23 @@ class WsDisconnect(Exception):
     pass
 
 
-def is_asgi2(app):
+def is_asgi2(app: Union[ASGI2App, ASGI3App]) -> bool:
     if inspect.isclass(app):
         return True
 
-    if hasattr(app, "__call__") and inspect.iscoroutinefunction(app.__call__):
+    if hasattr(app, "__call__") and inspect.iscoroutinefunction(app.__call__):  #type: ignore
         return False
 
     return not inspect.iscoroutinefunction(app)
+
+
+class ASGI2to3:
+    def __init__(self, app: ASGI2App) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        instance = self.app(scope)
+        await instance(receive, send)
 
 
 class Response:
@@ -116,14 +128,12 @@ class Response:
 
 
 class WsSession:
-    def __init__(self, app: ASGIApp, scope: Scope) -> None:
-        self._handler = app(scope)
-        self._scope = scope
+    def __init__(self, app: ASGI3App, scope: Scope) -> None:
         self._client: Queue = Queue()  # For ASGI app to send messages
         self._server: Queue = Queue()  # For client session to send message to ASGI app
 
         self._server_task = ensure_future(
-            self._handler(self._server_receive, self._server_send)
+            app(scope, self._server_receive, self._server_send)
         )
 
     async def _start(self) -> None:
@@ -210,11 +220,17 @@ class TestClient:
 
     def __init__(
         self,
-        app: ASGIApp,
+        app: Union[ASGI2App, ASGI3App],
         raise_server_exceptions: bool = True,
         base_url: str = "http://testserver",
     ) -> None:
-        self.app = app
+
+        if is_asgi2(app):
+            app = cast(ASGI2App, app)
+            app = ASGI2to3(app)
+            self.app = cast(ASGI3App, app)
+        else:
+            self.app = cast(ASGI3App, app)
         self.base_url = base_url
         self.raise_server_exceptions = raise_server_exceptions
 
@@ -260,11 +276,7 @@ class TestClient:
         try:
             self.__response_started = False
             self.__response_complete = False
-            if is_asgi2(self.app):
-                handler = self.app(scope)
-                await handler(self._receive, self._send)
-            else:
-                await self.app(scope, self._receive, self._send)
+            await self.app(scope, self._receive, self._send)
         except Exception as ex:
             if self.raise_server_exceptions:
                 raise ex from None
