@@ -233,6 +233,7 @@ class TestClient:
             self.app = cast(ASGI3App, app)
         self.base_url = base_url
         self.raise_server_exceptions = raise_server_exceptions
+        self.request_is_sent = False
 
     async def send(
         self,
@@ -386,6 +387,9 @@ class TestClient:
         """ Mimic ASGI receive awaitable.
             TODO: Mimic Stream requests
         """
+        if self.request_is_sent:
+            await sleep(10)
+        self.request_is_sent = True
         return {"type": "http.request", "body": self._body, "more_body": False}
 
     async def get(self, url, **kwargs):
