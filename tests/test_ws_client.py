@@ -48,57 +48,46 @@ def echo_server():
     return TestClient(Echo())
 
 
-@pytest.mark.asyncio
 async def test_ws(client):
-    websocket = await client.ws_connect("/")
-    data = await websocket.receive_text()
-    assert data == "Hello, world!"
+    async with client.ws_session("/") as websocket:
+        data = await websocket.receive_text()
+        assert data == "Hello, world!"
 
 
-@pytest.mark.asyncio
 async def test_ws_disconnect(client):
-    websocket = await client.ws_connect("/")
-    await websocket.receive_text()
-
-    with pytest.raises(WsDisconnect):
+    async with client.ws_session("/") as websocket:
         await websocket.receive_text()
 
+        with pytest.raises(WsDisconnect):
+            await websocket.receive_text()
 
-@pytest.mark.asyncio
+
 async def test_send(echo_server):
-    websocket = await echo_server.ws_connect("/")
-    for msg in ["Hey", "Echo", "Back"]:
-        await websocket.send_text(msg)
-        data = await websocket.receive_text()
-        assert data == msg
-    await websocket.close()
+    async with echo_server.ws_session("/") as websocket:
+        for msg in ["Hey", "Echo", "Back"]:
+            await websocket.send_text(msg)
+            data = await websocket.receive_text()
+            assert data == msg
 
 
-@pytest.mark.asyncio
 async def test_send_receive_bytes(client):
-    websocket = await client.ws_connect("/bytes")
+    async with client.ws_session("/bytes") as websocket:
+        byte_msg = b"test"
+        await websocket.send_bytes(byte_msg)
+        response = await websocket.receive_bytes()
 
-    byte_msg = b"test"
-    await websocket.send_bytes(byte_msg)
-    response = await websocket.receive_bytes()
-
-    assert response == byte_msg
-    await websocket.close()
+        assert response == byte_msg
 
 
-@pytest.mark.asyncio
 async def test_send_receive_json(client):
-    websocket = await client.ws_connect("/json")
+    async with client.ws_session("/json") as websocket:
+        json_msg = {"hello": "test"}
+        await websocket.send_json(json_msg)
+        response = await websocket.receive_json()
 
-    json_msg = {"hello": "test"}
-    await websocket.send_json(json_msg)
-    response = await websocket.receive_json()
-
-    assert response == json_msg
-    await websocket.close()
+        assert response == json_msg
 
 
-@pytest.mark.asyncio
 async def test_ws_context(client):
     async with client.ws_session("/") as websocket:
         data = await websocket.receive_text()

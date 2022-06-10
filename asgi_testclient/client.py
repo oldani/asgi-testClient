@@ -1,9 +1,11 @@
 import inspect
 import json as _json
 from asyncio import Queue, ensure_future, sleep
+from contextlib import asynccontextmanager
 from http import HTTPStatus
 from urllib.parse import urlsplit, urlencode
 from wsgiref.headers import Headers as _Headers
+import anyio
 
 from asgi_testclient.types import (
     Scope,
@@ -128,13 +130,12 @@ class Response:
 
 
 class WsSession:
-    def __init__(self, app: ASGI3App, scope: Scope) -> None:
+    def __init__(self) -> None:
         self._client: Queue = Queue()  # For ASGI app to send messages
         self._server: Queue = Queue()  # For client session to send message to ASGI app
 
-        self._server_task = ensure_future(
-            app(scope, self._server_receive, self._server_send)
-        )
+    async def serve(self, app: ASGI3App, scope):
+        await app(scope, self._server_receive, self._server_send)
 
     async def _start(self) -> None:
         """ Start conmunication between client and ASGI app. """
@@ -185,20 +186,6 @@ class WsSession:
     async def close(self):
         """ Finish session with server, wait until handler is done. """
         await self.send({"type": "websocket.disconnect", "code": 1000})
-        while not self._server_task.done():
-            await sleep(0.1)
-
-
-class WsContextManager:
-    def __init__(self, ws_session):
-        self.ws_session = ws_session
-
-    async def __aenter__(self):
-        self.ws_session = await self.ws_session
-        return self.ws_session
-
-    async def __aexit__(self, *args):
-        await self.ws_session.close()
 
 
 class TestClient:
@@ -223,6 +210,7 @@ class TestClient:
         app: Union[ASGI2App, ASGI3App],
         raise_server_exceptions: bool = True,
         base_url: str = "http://testserver",
+        cookies: dict[str, str] = None,
     ) -> None:
 
         if is_asgi2(app):
@@ -234,6 +222,7 @@ class TestClient:
         self.base_url = base_url
         self.raise_server_exceptions = raise_server_exceptions
         self.request_is_sent = False
+        self.cookies = cookies
 
     async def send(
         self,
@@ -244,8 +233,7 @@ class TestClient:
         headers: Headers = {},
         json: dict = {},
         subprotocols: Optional[List[str]] = None,
-        ws: bool = False,
-    ) -> Union[Response, WsSession]:
+    ) -> Response:
         """ Handle request/response cycle seting up request, creating scope dict,
             calling the app and awaiting in the handler to return the response. """
         self.url = url
@@ -263,14 +251,6 @@ class TestClient:
             "client": ("testclient", 5000),
             "server": [host, port],
         }
-
-        if ws:
-            scope["type"] = "websocket"
-            scope["scheme"] = "ws"
-            scope["subprotocols"] = subprotocols or []
-            session = WsSession(self.app, scope)
-            await session._start()
-            return session
 
         scope["type"] = "http"
         self.prepare_body(req_headers, data=data, json=json)
@@ -329,6 +309,9 @@ class TestClient:
         """ Prepares the given HTTP headers."""
         _headers: list = [(b"host", host.encode())]
         _headers += self.default_headers
+
+        if self.cookies:
+            _headers += [(b"cookie", ";".join(f"{key}={value}" for key, value in self.cookies.items()).encode())]
 
         if headers:
             if isinstance(headers, dict):
@@ -413,12 +396,31 @@ class TestClient:
     async def patch(self, url, **kwargs):
         return await self.send("PATCH", url, **kwargs)
 
-    async def ws_connect(self, url, subprotocols=None, **kwargs):
-        return await self.send(
-            "GET", url, subprotocols=subprotocols, ws=True, **kwargs
-        )
+    @asynccontextmanager
+    async def ws_session(self, url, subprotocols=None, params=None, headers=None):
+        self.url = url
+        scheme, host, port, path, query = self.prepare_url(url, params=params)
+        req_headers: ReqHeaders = self.prepare_headers(host, headers)
 
-    def ws_session(self, url, subprotocols=None, **kwargs):
-        return WsContextManager(
-            self.send("GET", url, subprotocols=subprotocols, ws=True, **kwargs)
-        )
+        scope = {
+            "http_version": "1.1",
+            "method": "GET",
+            "path": path,
+            "root_path": "",
+            "scheme": scheme,
+            "query_string": query,
+            "headers": req_headers,
+            "client": ("testclient", 5000),
+            "server": [host, port],
+            "type": "websocket",
+            "scheme": "ws",
+            "subprotocols": subprotocols or [],
+        }
+        session = WsSession()
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(session.serve, self.app, scope)
+            await session._start()
+            try:
+                yield session
+            finally:
+                await session.close()

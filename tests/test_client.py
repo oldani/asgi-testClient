@@ -63,7 +63,6 @@ def client():
     return TestClient(app)
 
 
-@pytest.mark.asyncio
 async def test_headers(client):
     headers = [["X-Token", "test-token"]]
     response = await client.get("/headers", headers=headers)
@@ -79,38 +78,32 @@ async def test_headers(client):
     assert headers[0][1] in response.values()
 
 
-@pytest.mark.asyncio
 async def test_invalid_headers(client):
     headers = "no upported"
     with pytest.raises(ValueError):
         await client.get("/headers", headers=headers)
 
 
-@pytest.mark.asyncio
 async def test_get(client):
     response = await client.get("http://test")
     assert response.json() == {"hello": "world"}
 
 
-@pytest.mark.asyncio
 async def test_delete(client):
     response = await client.delete("/")
     assert response.json() == {"hello": "world"}
 
 
-@pytest.mark.asyncio
 async def test_get_text(client):
     response = await client.get("/text")
     assert response.text == "testing content"
 
 
-@pytest.mark.asyncio
 async def test_get_content(client):
     response = await client.get("/stream")
     assert response.content == (b"=" * 10)
 
 
-@pytest.mark.asyncio
 async def test_get_args(client):
     params = {"name": "test", "age": "1", "space": " str"}
     response = await client.get("/args", params=params)
@@ -120,35 +113,30 @@ async def test_get_args(client):
     assert response.json() == ["test2", "test"]
 
 
-@pytest.mark.asyncio
 async def test_post_json(client):
     json = {"user": "test", "age": "1", "pass": "123456"}
     response = await client.post("/json", json=json)
     assert response.json() == json
 
 
-@pytest.mark.asyncio
 async def test_post_data(client):
     data = {"user": "test", "age": "1", "pass": "123456"}
     response = await client.post("/data", data=data)
     assert response.json() == data
 
 
-@pytest.mark.asyncio
 async def test_put_json(client):
     json = {"user": "test", "age": "1", "pass": "123456"}
     response = await client.put("/json", json=json)
     assert response.json() == json
 
 
-@pytest.mark.asyncio
 async def test_patch_json(client):
     json = {"user": "test", "age": "1", "pass": "123456"}
     response = await client.patch("/json", json=json)
     assert response.json() == json
 
 
-@pytest.mark.asyncio
 async def test_response_ok(client):
     response = await client.get("/")
     assert response.ok
@@ -157,7 +145,6 @@ async def test_response_ok(client):
     assert not response.ok
 
 
-@pytest.mark.asyncio
 async def test_response_raise_for(client):
     response = await client.get("/notfound")
 
@@ -170,7 +157,6 @@ async def test_response_raise_for(client):
         assert not response.raise_for_status()
 
 
-@pytest.mark.asyncio
 async def test_response_str(client):
     response = await client.get("/")
     assert str(response) == "<Response [200]>"
@@ -184,7 +170,6 @@ def test_response_invalid_json():
         respose.json()
 
 
-@pytest.mark.asyncio
 async def test_client_raise():
     @app.route("/app/error")
     def error(request):
@@ -196,14 +181,12 @@ async def test_client_raise():
         await client.get("/app/error")
 
 
-@pytest.mark.asyncio
 async def test_client_bad_scheme(client):
 
     with pytest.raises(ValueError):
         await client.get("noscheme/")
 
 
-@pytest.mark.asyncio
 async def test_client_bad_netloc():
 
     client = TestClient(app, base_url="http:netloc")
