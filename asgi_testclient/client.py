@@ -1,6 +1,6 @@
 import inspect
 import json as _json
-from asyncio import Queue, ensure_future, sleep
+from asyncio import Queue, sleep
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from urllib.parse import urlsplit, urlencode
@@ -40,7 +40,7 @@ def is_asgi2(app: Union[ASGI2App, ASGI3App]) -> bool:
     if inspect.isclass(app):
         return True
 
-    if hasattr(app, "__call__") and inspect.iscoroutinefunction(app.__call__):  #type: ignore
+    if hasattr(app, "__call__") and inspect.iscoroutinefunction(app.__call__):  # type: ignore
         return False
 
     return not inspect.iscoroutinefunction(app)
@@ -88,7 +88,7 @@ class Response:
 
         This attribute checks if the status code of the response is between
         400 and 600 to see if there was a client error or a server error. If
-        the status code is between 200 and 400, this will return True. 
+        the status code is between 200 and 400, this will return True.
 
         This is **not** a check to see if the response code is ``200 OK``. """
         try:
@@ -413,7 +413,6 @@ class TestClient:
             "client": ("testclient", 5000),
             "server": [host, port],
             "type": "websocket",
-            "scheme": "ws",
             "subprotocols": subprotocols or [],
         }
         session = WsSession()
@@ -424,3 +423,4 @@ class TestClient:
                 yield session
             finally:
                 await session.close()
+                tg.cancel_scope.cancel()
