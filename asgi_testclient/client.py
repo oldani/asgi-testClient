@@ -1,6 +1,7 @@
 import inspect
 import json as _json
 from asyncio import Queue, sleep
+from http.cookies import SimpleCookie
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from urllib.parse import urlsplit, urlencode
@@ -261,6 +262,10 @@ class TestClient:
         except Exception as ex:
             if self.raise_server_exceptions:
                 raise ex from None
+        if cookie_header := self._response.headers.get('set-cookie'):
+            cookie = SimpleCookie()
+            cookie.load(cookie_header)
+            self.cookies.update({k: v.value for k, v in cookie.items()})
         return self._response
 
     def prepare_url(self, url: str, params: Params) -> Url:
