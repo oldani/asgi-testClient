@@ -1,12 +1,12 @@
+import asyncio
 import inspect
 import json as _json
-from asyncio import Queue, sleep
+from functools import partial
 from http.cookies import SimpleCookie
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from urllib.parse import urlsplit, urlencode
 from wsgiref.headers import Headers as _Headers
-import anyio
 
 from asgi_testclient.types import (
     Scope,
@@ -132,8 +132,8 @@ class Response:
 
 class WsSession:
     def __init__(self) -> None:
-        self._client: Queue = Queue()  # For ASGI app to send messages
-        self._server: Queue = Queue()  # For client session to send message to ASGI app
+        self._client = asyncio.Queue()  # For ASGI app to send messages
+        self._server = asyncio.Queue()  # For client session to send message to ASGI app
 
     async def serve(self, app: ASGI3App, scope):
         await app(scope, self._server_receive, self._server_send)
@@ -222,7 +222,6 @@ class TestClient:
             self.app = cast(ASGI3App, app)
         self.base_url = base_url
         self.raise_server_exceptions = raise_server_exceptions
-        self.request_is_sent = False
         self.cookies = cookies
 
     async def send(
@@ -237,7 +236,6 @@ class TestClient:
     ) -> Response:
         """ Handle request/response cycle seting up request, creating scope dict,
             calling the app and awaiting in the handler to return the response. """
-        self.url = url
         scheme, host, port, path, query = self.prepare_url(url, params=params)
         req_headers: ReqHeaders = self.prepare_headers(host, headers)
 
@@ -258,7 +256,7 @@ class TestClient:
         try:
             self.__response_started = False
             self.__response_complete = False
-            await self.app(scope, self._receive, self._send)
+            await self.app(scope, self._receive, partial(self._send, url=url))
         except Exception as ex:
             if self.raise_server_exceptions:
                 raise ex from None
@@ -346,14 +344,14 @@ class TestClient:
             )
         headers.append((b"content-length", str(len(self._body)).encode()))
 
-    async def _send(self, message: Message) -> None:
+    async def _send(self, message: Message, url: str) -> None:
         """ Mimic ASGI send awaitable, create and set response object. """
         if message["type"] == "http.response.start":
             assert (
                 not self.__response_started
             ), 'Received multiple "http.response.start" messages.'
             self._response = Response(
-                self.url,
+                url,
                 status_code=message["status"],
                 headers=[
                     (k.decode(), v.decode()) for k, v in message["headers"]
@@ -372,12 +370,6 @@ class TestClient:
                 self.__response_complete = True
 
     async def _receive(self) -> Message:
-        """ Mimic ASGI receive awaitable.
-            TODO: Mimic Stream requests
-        """
-        if self.request_is_sent:
-            await sleep(10)
-        self.request_is_sent = True
         return {"type": "http.request", "body": self._body, "more_body": False}
 
     async def get(self, url, **kwargs):
@@ -403,7 +395,6 @@ class TestClient:
 
     @asynccontextmanager
     async def ws_session(self, url, subprotocols=None, params=None, headers=None):
-        self.url = url
         scheme, host, port, path, query = self.prepare_url(url, params=params)
         req_headers: ReqHeaders = self.prepare_headers(host, headers)
 
@@ -421,11 +412,18 @@ class TestClient:
             "subprotocols": subprotocols or [],
         }
         session = WsSession()
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(session.serve, self.app, scope)
+        async with run_coro(session.serve(self.app, scope)):
             await session._start()
             try:
                 yield session
             finally:
                 await session.close()
-                tg.cancel_scope.cancel()
+
+
+@asynccontextmanager
+async def run_coro(coro):
+    task = asyncio.create_task(coro)
+    try:
+        yield
+    finally:
+        await task
